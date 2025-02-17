@@ -188,10 +188,16 @@ class MoeWNA16Method(FusedMoEMethodBase):
             "is_transposed": False
         })
 
+        assert 'tp_rank' in extra_weight_attrs
+        assert 'tp_group_device' in extra_weight_attrs
+
+        tp_rank = extra_weight_attrs['tp_rank']
+        tp_group_device = extra_weight_attrs['tp_group_device']
+
         assert 'weight_loader' in extra_weight_attrs
         weight_loader = extra_weight_attrs['weight_loader']
         wrapped_weight_loader = MoeWNA16Method.get_weight_loader(
-            layer, weight_loader)
+            layer, weight_loader,tp_rank,tp_group_device)
         extra_weight_attrs['weight_loader'] = wrapped_weight_loader
 
         # Fused gate_up_proj (column parallel)
@@ -310,7 +316,7 @@ class MoeWNA16Method(FusedMoEMethodBase):
                              block_shape=[0, layer.group_size])
 
     @staticmethod
-    def get_weight_loader(layer, weight_loader):
+    def get_weight_loader(layer, weight_loader,tp_rank,tp_group_device):
 
         def convert_awq_tensor(tensor, tensor_type):
             # convert awq qweight/qzeros to a standard format (assume int4)
@@ -371,9 +377,10 @@ class MoeWNA16Method(FusedMoEMethodBase):
             if not layer.quant_config.has_zp and "qzeros" in weight_name:
                 return
 
-            device = get_tp_group().device
-            tp_rank = get_tensor_model_parallel_rank()
-            loaded_weight = loaded_weight.to(device)
+            # device = get_tp_group().device
+            # tp_rank = get_tensor_model_parallel_rank()
+
+            loaded_weight = loaded_weight.to(torch.device(tp_group_device))
             shard_size = layer.intermediate_size_per_partition
 
             # convert gptq and awq weight to a standard format
